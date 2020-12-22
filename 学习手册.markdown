@@ -1,0 +1,45 @@
+# Vue3 源码学习手册
+
+1. 环境调试运行
+
+- 从 /scripts 可以获得在 `npm run dev`是的时候回调用 dev.js 的代码逻辑,
+- `const args = require('minimist')(process.argv.slice(2))` 这个中的(`minimist`)库可以允许我们在设置 运行指令的时候 添加 -v -f 等等自定的属性参数,
+
+```javascript
+$ node example/parse.js -x 3 -y 4 -n5 -abc --beep=boop foo bar baz
+// minimist 库可以把我们的指令给转成这样的模式
+{ _: [ 'foo', 'bar', 'baz' ],
+  x: 3,
+  y: 4,
+  n: 5,
+  a: true,
+  b: true,
+  c: true,
+  beep: 'boop' }
+```
+
+```javascript
+const args = require('minimist')(process.argv.slice(2)) // 分解指令
+const target = args._.length ? fuzzyMatchTarget(args._)[0] : 'vue'
+const formats = args.formats || args.f // 把-f 或者 -formats 指令中的参数提取出来
+const sourceMap = args.sourcemap || args.s // 把 -s 或者 -sourcemap 中的参数提取出了, 在 rollup 打包的时候, vue3 根据你这个参数决定是否生成 sourcemap
+execa(
+  // execa 是用来在 node 环境的时候是赋值给全局变量
+  'rollup',
+  [
+    '-wc',
+    '--environment',
+    [
+      `COMMIT:${commit}`,
+      `TARGET:${target}`,
+      `FORMATS:${formats || 'global'}`,
+      sourceMap ? `SOURCE_MAP:true` : ``
+    ]
+      .filter(Boolean)
+      .join(',')
+  ],
+  {
+    stdio: 'inherit'
+  }
+)
+```
