@@ -1,6 +1,6 @@
 # Vue3 源码学习手册
 
-1. 环境调试运行
+## 1. 环境调试运行
 
 - 从 /scripts 可以获得在 `npm run dev`是的时候回调用 dev.js 的代码逻辑,
 - `const args = require('minimist')(process.argv.slice(2))` 这个中的(`minimist`)库可以允许我们在设置 运行指令的时候 添加 -v -f 等等自定的属性参数,
