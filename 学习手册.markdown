@@ -82,3 +82,51 @@ if (!commitRE.test(msg)) {
   process.exit(1)
 }
 ```
+
+## 2. 核心 API
+
+### `createApp()` 调用流程
+
+> `createApp()`返回一个实例, 在其中首先调用了 `ensureRenderer()` 这个方法
+
+#### 1. `ensureRenderer()`
+
+```js
+function ensureRenderer() {
+  return (
+    renderer || ((renderer = createRenderer < Node), Element > rendererOptions) // 此方式能够确保 生成唯一的 renderer 对象在全局里面
+  )
+}
+```
+
+> 用来确保当前存在 `renderer`对象, 如果存在就返回, 如果不存在就调用`createRenderer()`方法, 接收 `renderOptions`作为参数
+
+#### 2. `createRenderer()`
+
+> 这里面调用了 `baseCreateRenderer()`, 传入 options,是一个对象, interface 是`RendererOptions`,`RendererOptions`里面有很多方法,是用来给做虚拟 dom 用的方法
+
+#### 3. `baseCreateRenderer()`
+
+> `vnode`, `diff`, `patch`等方法军事在这个函数里面去实现
+> 返回是 `render()`, `hydrate()` 和 `createApp()`, `createApp()`调用了 `createAppAPI(render, hydrate)`
+
+#### 4. `createAppAPI()`
+
+> 返回调用 _内部生成的_ `createAPP()`
+
+```js
+ function isObject(value){
+   return value!==null && typeof val ==='object
+ }
+ function isFunction(value){
+   return typeof value ==='function'
+ }
+ let  obj = {
+	  then:()=>{
+	  },
+	  catch:()=>{
+	  },
+
+}
+console.log(isObject(obj)&& isFunction(obj.then) && isFunction(obj.catch))
+```
