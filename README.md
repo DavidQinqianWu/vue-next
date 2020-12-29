@@ -109,7 +109,7 @@ function ensureRenderer() {
 
 #### 2. `createRenderer()`
 
-> 这里面调用了 `baseCreateRenderer()`, 传入 options,是一个对象, interface 是`RendererOptions`,`RendererOptions`里面有很多方法,是用来给做虚拟 dom 用的方法
+> 这里面调用了 `baseCreateRenderer()`, 传入 options,是一个对象, interface 是`RendererOptions`,`RendererOptions`里面有很多方法,是用来给做虚拟 dom 用的方法.
 
 #### 3. `baseCreateRenderer()`
 
