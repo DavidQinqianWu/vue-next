@@ -1,100 +1,138 @@
-# vue-next [![beta](https://img.shields.io/npm/v/vue/next.svg)](https://www.npmjs.com/package/vue/v/next) [![CircleCI](https://circleci.com/gh/vuejs/vue-next.svg?style=svg&circle-token=fb883a2d0a73df46e80b2e79fd430959d8f2b488)](https://circleci.com/gh/vuejs/vue-next)
+---
+description: 个人Vue源码的学习心得总结
+---
 
-This is the repository for Vue 3.0.
+# Vue 源码学习笔记
 
-## Quickstart
+## 1. 环境调试运行
 
-- Via CDN: `<script src="https://unpkg.com/vue@next"></script>`
-- In-browser playground on [Codepen](https://codepen.io/yyx990803/pen/OJNoaZL)
-- Scaffold via [Vite](https://github.com/vitejs/vite):
+### 1.1 npm 运行文件分析\(`/scrips/dev.js`\)
 
-  ```bash
-  npm init vite-app hello-vue3 # OR yarn create vite-app hello-vue3
-  ```
+* 从 /scripts 可以获得在 `npm run dev`是的时候回调用 dev.js 的代码逻辑,
+* `const args = require('minimist')(process.argv.slice(2))` 这个中的\(`minimist`\)库可以允许我们在设置 运行指令的时候 添加 -v -f 等等自定的属性参数,
 
-- Scaffold via [vue-cli](https://cli.vuejs.org/):
+```javascript
+$ node example/parse.js -x 3 -y 4 -n5 -abc --beep=boop foo bar baz
+// minimist 库可以把我们的指令给转成这样的模式
+{
+  _: [ 'foo', 'bar', 'baz' ],
+  x: 3,
+  y: 4,
+  n: 5,
+  a: true,
+  b: true,
+  c: true,
+  beep: 'boop' 
+}
+```
 
-  ```bash
-  npm install -g @vue/cli # OR yarn global add @vue/cli
-  vue create hello-vue3
-  # select vue 3 preset
-  ```
+```javascript
+const args = require('minimist')(process.argv.slice(2)) // 分解指令
+const target = args._.length ? fuzzyMatchTarget(args._)[0] : 'vue'
+const formats = args.formats || args.f // 把-f 或者 -formats 指令中的参数提取出来
+const sourceMap = args.sourcemap || args.s // 把 -s 或者 -sourcemap 中的参数提取出了, 在 rollup 打包的时候, vue3 根据你这个参数决定是否生成 sourcemap
+execa(
+  // execa 是用来在 node 环境的时候是赋值给全局变量
+  'rollup',
+  [
+    '-wc',
+    '--environment',
+    [
+      `COMMIT:${commit}`,
+      `TARGET:${target}`,
+      `FORMATS:${formats || 'global'}`,
+      sourceMap ? `SOURCE_MAP:true` : ``
+    ]
+      .filter(Boolean)
+      .join(',')
+  ],
+  {
+    stdio: 'inherit'
+  }
+)
+```
 
-## Changes from Vue 2
+### 1.2 git commit 文件分析\(`/scrips/verifyCommit.js`\)
 
-Please consult the [Migration Guide](https://v3.vuejs.org/guide/migration/introduction.html).
+* 在我们自己 fork 了代码之后, 如果提交代码没有按照 vue3 的 commit 要求规范是无法被推送的, 那么这个控制你的 commit 的格式就是在 `/scripts/verifyCommit.js` 文件中
 
-- Note: IE11 support is still pending.
+```javascript
+// Invoked on the commit-msg git hook by yorkie.
 
-## Supporting Libraries
+const chalk = require('chalk')
+const msgPath = process.env.GIT_PARAMS
+const msg = require('fs')
+  .readFileSync(msgPath, 'utf-8')
+  .trim()
 
-All of our official libraries and tools now support Vue 3, but most of them are still in beta status and distributed under the `next` dist tag on NPM. **We are planning to stabilize and switch all projects to use the `latest` dist tag by end of 2020.**
+const commitRE = /^(revert: )?(feat|fix|docs|dx|style|refactor|perf|test|workflow|build|ci|chore|types|wip|release)(\(.+\))?: .{1,50}/
+// 从这里可以看出 对我们的品论提交 有严格的要求, 除了不能有 需要包含以上的评论, 例如:
+// test: this is test
+// 当然 不能有 revert, 在代码里面已经给出了
 
-### Vue CLI
+if (!commitRE.test(msg)) {
+  console.log()
+  console.error(
+    `  ${chalk.bgRed.white(' ERROR ')} ${chalk.red(
+      `invalid commit message format.`
+    )}\n\n` +
+      chalk.red(
+        `  Proper commit message format is required for automated changelog generation. Examples:\n\n`
+      ) +
+      `    ${chalk.green(`feat(compiler): add 'comments' option`)}\n` +
+      `    ${chalk.green(
+        `fix(v-model): handle events on blur (close #28)`
+      )}\n\n` +
+      chalk.red(`  See .github/commit-convention.md for more details.\n`)
+  )
+  process.exit(1)
+}
+```
 
-As of v4.5.0, `vue-cli` now provides built-in option to choose Vue 3 preset when creating a new project. You can upgrade `vue-cli` and run `vue create` to create a Vue 3 project today.
+## 2. 核心 API
 
-### Vue Router
+### `createApp()` 调用流程
 
-Vue Router 4.0 provides Vue 3 support and has a number of breaking changes of its own. Check out its [Migration Guide](https://next.router.vuejs.org/guide/migration/) for full details.
+> `createApp()`返回一个实例, 在其中首先调用了 `ensureRenderer()` 这个方法
 
-- [![beta](https://img.shields.io/npm/v/vue-router/next.svg)](https://www.npmjs.com/package/vue-router/v/next)
-- [Github](https://github.com/vuejs/vue-router-next)
-- [RFCs](https://github.com/vuejs/rfcs/pulls?q=is%3Apr+is%3Amerged+label%3Arouter)
+#### 1. `ensureRenderer()`
 
-### Vuex
+```javascript
+function ensureRenderer() {
+  return (
+    renderer || ((renderer = createRenderer < Node), Element > rendererOptions) // 此方式能够确保 生成唯一的 renderer 对象在全局里面
+  )
+}
+```
 
-Vuex 4.0 provides Vue 3 support with largely the same API as 3.x. The only breaking change is [how the plugin is installed](https://github.com/vuejs/vuex/tree/4.0#breaking-changes).
+> 用来确保当前存在 `renderer`对象, 如果存在就返回, 如果不存在就调用`createRenderer()`方法, 接收 `renderOptions`作为参数
 
-- [![beta](https://img.shields.io/npm/v/vuex/next.svg)](https://www.npmjs.com/package/vuex/v/next)
-- [Github](https://github.com/vuejs/vuex/tree/4.0)
+#### 2. `createRenderer()`
 
-### Devtools Extension
+> 这里面调用了 `baseCreateRenderer()`, 传入 options,是一个对象, interface 是`RendererOptions`,`RendererOptions`里面有很多方法,是用来给做虚拟 dom 用的方法
 
-We are working on a new version of the Devtools with a new UI and refactored internals to support multiple Vue versions. The new version is currently in beta and only supports Vue 3 (for now). Vuex and Router integration is also work in progress.
+#### 3. `baseCreateRenderer()`
 
-- For Chrome: [Install from Chrome web store](https://chrome.google.com/webstore/detail/vuejs-devtools/ljjemllljcmogpfapbkkighbhhppjdbg?hl=en)
+> `vnode`, `diff`, `patch`等方法军事在这个函数里面去实现 返回是 `render()`, `hydrate()` 和 `createApp()`, `createApp()`调用了 `createAppAPI(render, hydrate)`
 
-  - Note: the beta channel may conflict with the stable version of devtools so you may need to temporarily disable the stable version for the beta channel to work properly.
+#### 4. `createAppAPI()`
 
-- For Firefox: [Download the signed extension](https://github.com/vuejs/vue-devtools/releases/tag/v6.0.0-beta.2) (`.xpi` file under Assets)
+> 返回调用 _内部生成的_ `createAPP()`
 
-### IDE Support
+```javascript
+ function isObject(value){
+   return value!==null && typeof val ==='object
+ }
+ function isFunction(value){
+   return typeof value ==='function'
+ }
+ let  obj = {
+      then:()=>{
+      },
+      catch:()=>{
+      },
 
-It is recommended to use [VSCode](https://code.visualstudio.com/) with our official extension [Vetur](https://marketplace.visualstudio.com/items?itemName=octref.vetur), which provides comprehensive IDE support for Vue 3.
+}
+console.log(isObject(obj)&& isFunction(obj.then) && isFunction(obj.catch))
+```
 
-### Other Projects
-
-| Project               | NPM                           | Repo                 |
-| --------------------- | ----------------------------- | -------------------- |
-| @vue/babel-plugin-jsx | [![rc][jsx-badge]][jsx-npm]   | [[Github][jsx-code]] |
-| eslint-plugin-vue     | [![stable][epv-badge]][epv-npm] | [[Github][epv-code]] |
-| @vue/test-utils       | [![beta][vtu-badge]][vtu-npm] | [[Github][vtu-code]] |
-| vue-class-component   | [![beta][vcc-badge]][vcc-npm] | [[Github][vcc-code]] |
-| vue-loader            | [![beta][vl-badge]][vl-npm]   | [[Github][vl-code]]  |
-| rollup-plugin-vue     | [![beta][rpv-badge]][rpv-npm] | [[Github][rpv-code]] |
-
-[jsx-badge]: https://img.shields.io/npm/v/@vue/babel-plugin-jsx.svg
-[jsx-npm]: https://www.npmjs.com/package/@vue/babel-plugin-jsx
-[jsx-code]: https://github.com/vuejs/jsx-next
-[vd-badge]: https://img.shields.io/npm/v/@vue/devtools/beta.svg
-[vd-npm]: https://www.npmjs.com/package/@vue/devtools/v/beta
-[vd-code]: https://github.com/vuejs/vue-devtools/tree/next
-[epv-badge]: https://img.shields.io/npm/v/eslint-plugin-vue.svg
-[epv-npm]: https://www.npmjs.com/package/eslint-plugin-vue
-[epv-code]: https://github.com/vuejs/eslint-plugin-vue
-[vtu-badge]: https://img.shields.io/npm/v/@vue/test-utils/next.svg
-[vtu-npm]: https://www.npmjs.com/package/@vue/test-utils/v/next
-[vtu-code]: https://github.com/vuejs/vue-test-utils-next
-[jsx-badge]: https://img.shields.io/npm/v/@ant-design-vue/babel-plugin-jsx.svg
-[jsx-npm]: https://www.npmjs.com/package/@ant-design-vue/babel-plugin-jsx
-[jsx-code]: https://github.com/vueComponent/jsx
-[vcc-badge]: https://img.shields.io/npm/v/vue-class-component/next.svg
-[vcc-npm]: https://www.npmjs.com/package/vue-class-component/v/next
-[vcc-code]: https://github.com/vuejs/vue-class-component/tree/next
-[vl-badge]: https://img.shields.io/npm/v/vue-loader/next.svg
-[vl-npm]: https://www.npmjs.com/package/vue-loader/v/next
-[vl-code]: https://github.com/vuejs/vue-loader/tree/next
-[rpv-badge]: https://img.shields.io/npm/v/rollup-plugin-vue/next.svg
-[rpv-npm]: https://www.npmjs.com/package/rollup-plugin-vue/v/next
-[rpv-code]: https://github.com/vuejs/rollup-plugin-vue/tree/next
